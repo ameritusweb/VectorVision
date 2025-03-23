@@ -2,9 +2,20 @@
 {
     internal class Program
     {
-        static void Main(string[] args)
+        static async Task Main(string[] args)
         {
-            Console.WriteLine("Hello, World!");
+            // Get all pet images
+            string[] imagePaths = Directory.GetFiles("E:\\PetImages\\Animals", "*.jpg");
+
+            // Create POC with batch size of 5
+            var poc = new PetOrderer(
+                imagePaths: imagePaths,
+                batchSize: 5,
+                vectorSize: 48
+            );
+
+            // Train for 10 epochs
+            await poc.Train(epochs: 10);
         }
     }
 }
