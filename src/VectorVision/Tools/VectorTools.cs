@@ -930,6 +930,55 @@
         }
 
         /// <summary>
+        /// Sums up 2D vectors per row, converting from multiple vectors to a single resultant vector per row.
+        /// </summary>
+        /// <param name="input">Input tensor where each row contains magnitudes in left half and angles in right half.</param>
+        /// <returns>A tensor where each row contains a single magnitude and angle representing the sum vector.</returns>
+        public PradResult VectorSum2D(PradOp input)
+        {
+            var rows = input.CurrentShape[0];
+            var cols = input.CurrentShape[1];
+            var halfCols = cols / 2;
+
+            // Split into magnitudes and angles
+            var (magnitudes, angles) = input.DoParallel(
+                x => x.Indexer(":", $":{halfCols}"),
+                y => y.Indexer(":", $"{halfCols}:"));
+
+            // Convert to Cartesian coordinates
+            var (cosAngles, sinAngles) = angles.PradOp.DoParallel(
+                x => x.Cos(),
+                y => y.Sin());
+
+            // Multiply magnitudes by components
+            var (xComponents, yComponents) = magnitudes.PradOp.DoParallel(
+                x => x.Mul(cosAngles.Result),
+                y => y.Mul(sinAngles.Result));
+
+            // Sum x and y components per row
+            var sumX = xComponents.PradOp.Sum(new[] { 1 });
+            var sumY = yComponents.PradOp.Sum(new[] { 1 });
+
+            var sumXBranch = sumX.Branch();
+            var sumYBranch = sumY.Branch();
+
+            // Calculate resultant magnitude using Pythagorean theorem
+            var resultantMagnitude = sumX.PradOp.Square()
+                .Then(PradOp.AddOp, sumY.PradOp.Square().Result)
+                .Then(PradOp.SquareRootOp);
+
+            // Calculate resultant angle using atan2
+            var resultantAngle = sumYBranch.Atan2(sumXBranch.CurrentTensor);
+
+            // Reshape results to match expected output format
+            var reshapedMagnitude = resultantMagnitude.Then(PradOp.ReshapeOp, new[] { rows, 1 });
+            var reshapedAngle = resultantAngle.Then(PradOp.ReshapeOp, new[] { rows, 1 });
+
+            // Concatenate magnitude and angle
+            return reshapedMagnitude.Then(PradOp.ConcatOp, new[] { reshapedAngle.Result }, axis: 1);
+        }
+
+        /// <summary>
         /// Implements element-wise inversion.
         /// </summary>
         /// <param name="opInput1">The input.</param>
