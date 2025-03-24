@@ -56,6 +56,7 @@ namespace VectorVision
             {
                 // Step 1: Encode each image using vector operations
                 var imageEncodings = new List<Tensor>();
+                var pradOps = new List<PradOp>();
                 for (int i = 0; i < imagePaths.Length; i++)
                 {
                     // Convert image to initial vectors
@@ -73,6 +74,7 @@ namespace VectorVision
                     var summed = _vectorTools.VectorSum2D(multiplied.PradOp);
                     var encoded = _vectorTools.VectorBasedTranspose(summed.PradOp);
 
+                    pradOps.Add(encoded.PradOp);
                     imageEncodings.Add(encoded.Result);
                     encodedImages[i] = encoded.Result;
                 }
