@@ -7,6 +7,8 @@
 
     public class ImageVectorConverter
     {
+        private const int TargetSize = 200;
+
         /// <summary>
         /// Converts an image to a vector representation where magnitude represents lightness and angle represents hue
         /// </summary>
@@ -17,24 +19,25 @@
             // Load the image
             using var image = CvInvoke.Imread(imagePath, ImreadModes.Color);
 
+            // Resize image to 200x200
+            using var resizedImage = new Mat();
+            CvInvoke.Resize(image, resizedImage, new System.Drawing.Size(TargetSize, TargetSize), 0, 0, Inter.Lanczos4);
+
             // Convert to HSV color space
             using var hsvImage = new Mat();
-            CvInvoke.CvtColor(image, hsvImage, ColorConversion.Bgr2Hsv);
+            CvInvoke.CvtColor(resizedImage, hsvImage, ColorConversion.Bgr2Hsv);
 
             // Get image data
             var hsvData = hsvImage.ToImage<Hsv, byte>();
 
-            int rows = hsvImage.Height;
-            int cols = hsvImage.Width;
-
             // Create arrays for magnitudes (lightness) and angles (hue)
-            double[,] magnitudes = new double[rows, cols];
-            double[,] angles = new double[rows, cols];
+            double[,] magnitudes = new double[TargetSize, TargetSize];
+            double[,] angles = new double[TargetSize, TargetSize];
 
             // Process each pixel
-            for (int i = 0; i < rows; i++)
+            for (int i = 0; i < TargetSize; i++)
             {
-                for (int j = 0; j < cols; j++)
+                for (int j = 0; j < TargetSize; j++)
                 {
                     // Get HSV values
                     var pixel = hsvData[i, j];
@@ -52,16 +55,16 @@
             }
 
             // Create combined tensor
-            int tensorCols = cols * 2;
-            double[,] combinedData = new double[rows, tensorCols];
+            int tensorCols = TargetSize * 2;
+            double[,] combinedData = new double[TargetSize, tensorCols];
 
-            // Copy magnitudes to left half
-            for (int i = 0; i < rows; i++)
+            // Copy magnitudes to left half and angles to right half
+            for (int i = 0; i < TargetSize; i++)
             {
-                for (int j = 0; j < cols; j++)
+                for (int j = 0; j < TargetSize; j++)
                 {
                     combinedData[i, j] = magnitudes[i, j];
-                    combinedData[i, j + cols] = angles[i, j];
+                    combinedData[i, j + TargetSize] = angles[i, j];
                 }
             }
 
@@ -70,20 +73,21 @@
 
         public void ConvertVectorsToImage(Tensor vectorTensor, string outputPath)
         {
-            int rows = vectorTensor.Shape[0];
-            int totalCols = vectorTensor.Shape[1];
-            int cols = totalCols / 2;
+            if (vectorTensor.Shape[0] != TargetSize || vectorTensor.Shape[1] != TargetSize * 2)
+            {
+                throw new ArgumentException($"Input tensor must have shape [{TargetSize}, {TargetSize * 2}]");
+            }
 
             // Create HSV image
-            var hsvImage = new Image<Hsv, byte>(cols, rows);
+            var hsvImage = new Image<Hsv, byte>(TargetSize, TargetSize);
 
-            for (int i = 0; i < rows; i++)
+            for (int i = 0; i < TargetSize; i++)
             {
-                for (int j = 0; j < cols; j++)
+                for (int j = 0; j < TargetSize; j++)
                 {
                     // Get magnitude (lightness) and angle (hue)
                     double magnitude = vectorTensor[i, j];
-                    double angle = vectorTensor[i, j + cols];
+                    double angle = vectorTensor[i, j + TargetSize];
 
                     // Convert angle back to OpenCV hue range (0-180)
                     byte hue = (byte)((angle * 180.0) / (2.0 * Math.PI));

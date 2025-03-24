@@ -11,7 +11,7 @@ namespace VectorVision
         private readonly ImageVectorConverter _imageConverter = new ImageVectorConverter();
         private readonly Random _random = new Random(42); // Fixed seed for reproducibility
 
-        public PetOrderer(string[] imagePaths, int batchSize, int vectorSize = 48)
+        public PetOrderer(string[] imagePaths, int batchSize, int vectorSize = 400)
         {
             _orderer = new VectorImageOrderer(vectorSize: vectorSize, learningRate: 0.0002);
             _allImagePaths = new List<string>(imagePaths);

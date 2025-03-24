@@ -1,4 +1,6 @@
-﻿namespace VectorVision
+﻿using ParallelReverseAutoDiff.PRAD;
+
+namespace VectorVision
 {
     internal class Program
     {
@@ -10,8 +12,7 @@
             // Create POC with batch size of 5
             var poc = new PetOrderer(
                 imagePaths: imagePaths,
-                batchSize: 5,
-                vectorSize: 48
+                batchSize: 5
             );
 
             // Train for 10 epochs
