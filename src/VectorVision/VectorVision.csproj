@@ -10,7 +10,7 @@
   <ItemGroup>
     <PackageReference Include="Emgu.CV" Version="4.10.0.5680" />
     <PackageReference Include="Emgu.CV.runtime.windows" Version="4.10.0.5680" />
-    <PackageReference Include="ParallelReverseAutoDiff" Version="1.2.20.2" />
+    <PackageReference Include="ParallelReverseAutoDiff" Version="1.2.20.4" />
   </ItemGroup>
 
 </Project>

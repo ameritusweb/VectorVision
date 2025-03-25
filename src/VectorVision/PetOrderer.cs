@@ -60,6 +60,8 @@ namespace VectorVision
                         }
                     );
 
+                    _orderer.ResetGradients();
+
                     finalLoss = loss;
                     totalIterations++;
                 }

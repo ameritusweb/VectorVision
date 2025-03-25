@@ -27,11 +27,21 @@ namespace VectorVision
 
             // Weights for initial image encoding
             _encodingMatrixOp = new PradOp(Tensor.XavierUniform(new int[] { halfVectorSize, _vectorSize }));
+            _encodingMatrixOp.BackpropagationMode = BackpropagationMode.Accumulate;
             _encodingWeightsOp = new PradOp(Tensor.XavierUniform(new int[] { halfVectorSize, halfVectorSize }));
+            _encodingWeightsOp.BackpropagationMode = BackpropagationMode.Accumulate;
 
             // Weights for ordering the encoded images
             _orderingMatrixOp = new PradOp(Tensor.XavierUniform(new int[] { halfVectorSize, _vectorSize }));
             _orderingWeightsOp = new PradOp(Tensor.XavierUniform(new int[] { halfVectorSize, halfVectorSize }));
+        }
+
+        public void ResetGradients()
+        {
+            _encodingMatrixOp.ResetGradient();
+            _encodingWeightsOp.ResetGradient();
+            _orderingMatrixOp.ResetGradient();
+            _orderingWeightsOp.ResetGradient();
         }
 
         public (double loss, Tensor[] encodedImages) TrainOrdering(
@@ -79,16 +89,10 @@ namespace VectorVision
                     encodedImages[i] = encoded.Result;
                 }
 
-                // Step 2: Concatenate all encoded images along axis 0 in target order
-                var orderedEncodings = new List<Tensor>();
-                foreach (int idx in targetOrder)
-                {
-                    orderedEncodings.Add(imageEncodings[idx]);
-                }
-
+                // Step 2: Concatenate all encoded images along axis 0
                 var concatenated = new Tensor(
                     new int[] { imagePaths.Length, _vectorSize },
-                    orderedEncodings.SelectMany(t => t.Data).ToArray()
+                    imageEncodings.SelectMany(t => t.Data).ToArray()
                 );
                 var concatenatedOp = new PradOp(concatenated);
 
@@ -99,9 +103,17 @@ namespace VectorVision
                     _orderingWeightsOp
                 );
 
+                // Step 4: Order the results according to target order and create full sequence with reference vectors
+                var orderedResults = new List<double>();
+                for (int i = 0; i < targetOrder.Length; i++)
+                {
+                    int idx = targetOrder[i];
+                    orderedResults.AddRange(orderingResult.Result.Data.Skip(idx * _vectorSize).Take(_vectorSize));
+                }
+
                 // Step 4: Create full sequence with reference vectors
                 var fullSequence = startVector
-                    .Concat(orderingResult.Result.Data)
+                    .Concat(orderedResults)
                     .Concat(endVector)
                     .ToArray();
                 var sequenceOp = new PradOp(new Tensor(
@@ -120,9 +132,26 @@ namespace VectorVision
 
                 // Extract gradients for the middle section (excluding reference vectors)
                 int midValuesCount = imagePaths.Length * _vectorSize;
-                var orderingGradient = new Tensor(
+                var orderedGradient = new Tensor(
                     new int[] { imagePaths.Length, _vectorSize },
                     sequenceOp.SeedGradient.Data.Skip(_vectorSize).Take(midValuesCount).ToArray()
+                );
+
+                // Unorder the gradient to match original sequence
+                var unorderedGradient = new double[midValuesCount];
+                for (int i = 0; i < targetOrder.Length; i++)
+                {
+                    int originalIdx = targetOrder[i];
+                    Array.Copy(
+                        orderedGradient.Data, i * _vectorSize,
+                        unorderedGradient, originalIdx * _vectorSize,
+                        _vectorSize
+                    );
+                }
+
+                var orderingGradient = new Tensor(
+                    new int[] { imagePaths.Length, _vectorSize },
+                    unorderedGradient
                 );
 
                 // Backpropagate through ordering transformation
@@ -152,25 +181,5 @@ namespace VectorVision
 
             return (finalLoss, encodedImages);
         }
-
-        public Tensor EncodeImage(string imagePath)
-        {
-            var imageVectors = _imageConverter.ConvertImageToVectors(imagePath);
-            var imageVectorsOp = new PradOp(imageVectors);
-
-            var multiplied = _vectorTools.VectorBasedMatrixMultiplication(
-                imageVectorsOp,
-                _encodingMatrixOp,
-                _encodingWeightsOp
-            );
-
-            var summed = _vectorTools.VectorSum2D(multiplied.PradOp);
-            var encoded = _vectorTools.VectorBasedTranspose(summed.PradOp);
-
-            return encoded.Result;
-        }
-
-        public double[] GetEncodingWeights() => _encodingWeightsOp.CurrentTensor.Data;
-        public double[] GetOrderingWeights() => _orderingWeightsOp.CurrentTensor.Data;
     }
 }
