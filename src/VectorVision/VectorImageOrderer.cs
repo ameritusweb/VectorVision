@@ -8,12 +8,13 @@ namespace VectorVision
         private readonly VectorTools _vectorTools;
         private readonly ImageVectorConverter _imageConverter;
         private readonly int _vectorSize;
-        private PradOp _encodingMatrixOp;  // For initial image encoding
-        private PradOp _encodingWeightsOp;
+        private SharedWeightCoordinator _encodingCoordinator;
+        private SharedWeight _encodingMatrixOp;  // For initial image encoding
+        private SharedWeight _encodingWeightsOp;
         private PradOp _orderingMatrixOp;  // For ordering the encoded images
         private PradOp _orderingWeightsOp;
 
-        public VectorImageOrderer(int vectorSize = 48, double learningRate = 0.0002)
+        public VectorImageOrderer(int vectorSize = 400, double learningRate = 0.0002)
         {
             _vectorTools = new VectorTools { LearningRate = learningRate };
             _imageConverter = new ImageVectorConverter();
@@ -26,10 +27,11 @@ namespace VectorVision
             int halfVectorSize = _vectorSize / 2;
 
             // Weights for initial image encoding
-            _encodingMatrixOp = new PradOp(Tensor.XavierUniform(new int[] { halfVectorSize, _vectorSize }));
-            _encodingMatrixOp.BackpropagationMode = BackpropagationMode.Accumulate;
-            _encodingWeightsOp = new PradOp(Tensor.XavierUniform(new int[] { halfVectorSize, halfVectorSize }));
-            _encodingWeightsOp.BackpropagationMode = BackpropagationMode.Accumulate;
+            _encodingMatrixOp = new SharedWeight(Tensor.XavierUniform(new int[] { halfVectorSize, _vectorSize }));
+            _encodingWeightsOp = new SharedWeight(Tensor.XavierUniform(new int[] { halfVectorSize, halfVectorSize }));
+            _encodingCoordinator = new SharedWeightCoordinator();
+            _encodingCoordinator.RegisterSharedWeight(_encodingMatrixOp);
+            _encodingCoordinator.RegisterSharedWeight(_encodingWeightsOp);
 
             // Weights for ordering the encoded images
             _orderingMatrixOp = new PradOp(Tensor.XavierUniform(new int[] { halfVectorSize, _vectorSize }));
@@ -38,8 +40,7 @@ namespace VectorVision
 
         public void ResetGradients()
         {
-            _encodingMatrixOp.ResetGradient();
-            _encodingWeightsOp.ResetGradient();
+            _encodingCoordinator.Reset();
             _orderingMatrixOp.ResetGradient();
             _orderingWeightsOp.ResetGradient();
         }
@@ -73,17 +74,21 @@ namespace VectorVision
                     var imageVectors = _imageConverter.ConvertImageToVectors(imagePaths[i]);
                     var imageVectorsOp = new PradOp(imageVectors);
 
+                    var matrixOp = _encodingMatrixOp.UseOpAtIndex(i);
+                    var weightsOp = _encodingWeightsOp.UseOpAtIndex(i);
+
                     // Apply vector-based matrix multiplication
                     var multiplied = _vectorTools.VectorBasedMatrixMultiplication(
                         imageVectorsOp,
-                        _encodingMatrixOp,
-                        _encodingWeightsOp
+                        matrixOp,
+                        weightsOp
                     );
 
                     // Sum rows and transpose
                     var summed = _vectorTools.VectorSum2D(multiplied.PradOp);
                     var encoded = _vectorTools.VectorBasedTranspose(summed.PradOp);
 
+                    _encodingCoordinator.RegisterResult(encoded);
                     pradOps.Add(encoded.PradOp);
                     imageEncodings.Add(encoded.Result);
                     encodedImages[i] = encoded.Result;
@@ -165,13 +170,20 @@ namespace VectorVision
                 _orderingMatrixOp = updatedOrdering[0];
                 _orderingWeightsOp = updatedOrdering[1];
 
+                var concatenatedSeedGradient = concatenatedOp.SeedGradient;
+
+                List<Tensor> concatenatedUpstreamGradientList = new List<Tensor>();
+
+                // TODO: Fill list
+                _encodingCoordinator.BackpropagateAll(concatenatedUpstreamGradientList);
+
                 // Update encoding weights
                 var updatedEncoding = _vectorTools.GradientDescent(
-                    _encodingMatrixOp,
-                    _encodingWeightsOp
+                    _encodingMatrixOp.SharedOp,
+                    _encodingWeightsOp.SharedOp
                 );
-                _encodingMatrixOp = updatedEncoding[0];
-                _encodingWeightsOp = updatedEncoding[1];
+                _encodingMatrixOp.Reset(updatedEncoding[0].CurrentTensor);
+                _encodingWeightsOp.Reset(updatedEncoding[1].CurrentTensor);
 
                 if (progressCallback != null && iter % 10 == 0)
                 {
