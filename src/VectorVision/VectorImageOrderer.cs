@@ -174,7 +174,28 @@ namespace VectorVision
 
                 List<Tensor> concatenatedUpstreamGradientList = new List<Tensor>();
 
-                // TODO: Fill list
+                // Split the concatenated gradient into individual tensors
+                for (int i = 0; i < imagePaths.Length; i++)
+                {
+                    // Extract the gradient for this image
+                    var imageGradient = new double[_vectorSize];
+                    Array.Copy(
+                        concatenatedSeedGradient.Data,
+                        i * _vectorSize,
+                        imageGradient,
+                        0,
+                        _vectorSize
+                    );
+
+                    // Create a new tensor with the extracted gradient
+                    var gradientTensor = new Tensor(
+                        new int[] { 1, _vectorSize },
+                        imageGradient
+                    );
+
+                    concatenatedUpstreamGradientList.Add(gradientTensor);
+                }
+
                 _encodingCoordinator.BackpropagateAll(concatenatedUpstreamGradientList);
 
                 // Update encoding weights
